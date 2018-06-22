@@ -8,17 +8,18 @@ class UserPolicy:
     def __init__(self, initial_inventory, sku_cost):
         sku_demand_fdc = pd.read_csv('E:/work/GOC/second_round/par_FDC.csv')
         sku_demand_rdc = pd.read_csv('E:/work/GOC/second_round/par_RDC_total_sale.csv')
+        self.sku_demand_rdc = sku_demand_rdc
         sku_demand_rdc['dc_id'] = 0
         sku_demand = sku_demand_rdc.append(sku_demand_fdc,sort=True)
         self.sku_demand = sku_demand
-        self.sku_demand_rdc = sku_demand_rdc
         self.inv = initial_inventory
         self.costs = sku_cost
         self.extra_shipping_cost_per_unit = 0.01
         self.fixed_replenish_cost = 0.01
         self.sku_limit = np.asarray([200, 200, 200, 200, 200])
         self.capacity_limit = np.asarray([3200, 1600, 1200, 3600, 1600])
-        self.abandon_rate =np.asarray([1./100, 7./100, 10./100, 9./100, 8./100])
+        self.abandon_rate = np.asarray([1./100, 7./100, 10./100, 9./100, 8./100])
+        self.intransit = np.zeros((1000,7))
 
 
     def daily_decision(self,t):
@@ -39,17 +40,18 @@ class UserPolicy:
         sku_demand_rdc = self.sku_demand_rdc
         inventory = self.inv
         sku_cost = self.costs
+        intransit = self.intransit
 
 
         #REPLENISHMENT
-        sku_demand_rdc = sku_demand_rdc.set_index('item_sku_id')
-        sku_cost = sku_cost.set_index('item_sku_id')
-        sku_stock = inventory.set_index('item_sku_id')
-        replen_matrix = sku_cost.join(sku_demand_rdc, sort = True)
+        sku_demand_rdc = sku_demand_rdc.sort_values(by='item_sku_id').set_index('item_sku_id')
+        sku_cost_r = sku_cost.sort_values(by='item_sku_id').set_index('item_sku_id')
+        replen_matrix = sku_cost_r.join(sku_demand_rdc, sort = True)
         rdc_stock = inventory[inventory['dc_id'] == 0][['item_sku_id','stock_quantity']].sort_values(by='item_sku_id').set_index('item_sku_id')
-"---------------------------------------------------------------------------------------------------------------------------------------------------"
+
+        #Adjustable Constant:
         r_star = 7
-"---------------------------------------------------------------------------------------------------------------------------------------------------"
+
         def s_star_m(m):
             def z_alpha(h, g, r_star):
                 alpha = 1 - (h * r_star)/(h * r_star + g)
@@ -61,45 +63,40 @@ class UserPolicy:
             output = m.apply(lambda x: s_star(x.sku_avg, x.sku_std, x.holding_cost, x.stockout_cost), axis = 1)
             return output
 
-        def init_replen(s_star, stock):
-            if t % r_star != 1:
-                return 0
-            elif s_star <= stock:
+
+        def init_replen(s_star, stock, intransit):
+            if s_star <= stock + intransit:
                 return 0
             else:
-                return s_star - stock
+                return s_star - stock - intransit
+
 
         def replenishment(m,rdc_stock):
-            joined = pd.concat([s_star_m(m), rdc_stock], axis=1)
-            joined.columns = ['s_star', 'stock_quantity']
-            output = joined.apply(lambda x: init_replen(x.s_star, x.stock_quantity), axis = 1)
+            joined = pd.concat([s_star_m(m), rdc_stock, pd.Series(intransit.sum(axis=1),index=[i for i in range(1,1001)])], axis=1)
+            joined.columns = ['s_star', 'stock_quantity','intransit']
+            output = joined.apply(lambda x: init_replen(x.s_star, x.stock_quantity, x.intransit), axis = 1)
+            self.intransit[:,(t-1)%r_star] = np.array(output.get_values())
             replenish_val = np.reshape(output.get_values(),(1000,1)).T
             print(replenish_val.sum(axis=1))
             return replenish_val
-
-#         def replenishment_df(r,inventory):
-#             dm_inv = pd.merge(sku_demand_rdc, inventory[inventory['dc_id']==0], how='inner', on='item_sku_id')
-#             dm_inv_cost = pd.merge(dm_inv, sku_cost, how='inner', on='item_sku_id')
-#             dm_inv_cost['R'] = r
-#             dm_inv_cost['alpha'] = 1 - (dm_inv_cost['holding_cost'] * dm_inv_cost['R'])/(dm_inv_cost['holding_cost'] * dm_inv_cost['R'] + dm_inv_cost['stockout_cost'])
-#             dm_inv_cost['Z_alpha'] = stats.norm.ppf(dm_inv_cost['alpha'])
-#             dm_inv_cost['S'] = dm_inv_cost['sku_avg'] * (dm_inv_cost['R'] + 7) + dm_inv_cost['Z_alpha'] * ((dm_inv_cost['R'] + 7) * (dm_inv_cost['sku_std'] ** 2)) ** 0.5
-#             dm_inv_cost['diff'] = dm_inv_cost['S'] - dm_inv_cost['stock_quantity']
-#             dm_inv_cost['replenish'] = dm_inv_cost['diff'].apply(lambda x: x if x>0 else 0)
-#             replenish_val = np.reshape(dm_inv_cost.sort_values(by='item_sku_id',ascending=True)['replenish'].get_values(),(1000,1)).T
-#             return replenish_val
-
-        def replenish():
-            return np.zeros((1,1000))+100
 
 
         #ALLOCATION
         def allocation_rdc(inventory,t):
 
             dm_invntry = pd.merge(sku_demand_dist, inventory, how='inner', on=('item_sku_id','dc_id'))
+            # 怎么利用补货决策修改days_btw? 暂时先假设所有SKU都是每7（R*=7）天到货一次
+            #replenish['flag_d'] = replenish.date.apply(lambda x: 1 if x>=t else 0)
+            #next_repln = pd.DataFrame(replenish[replenish['flag_d']==1]['date'].groupby(by=replenish.item_sku_id).min()).reset_index()
+            #dm_invntry = pd.merge(dm_invntry, next_repln, how='left', on=('item_sku_id'))
+            #dm_invntry['days_btw'] = dm_invntry['date'] - t + 1
+            #dm_invntry['days_btw'].fillna(31-t, inplace=True)
+
             dm_invntry['days_btw'] = t % 7 + 1
+
             dm_invntry['sd'] = dm_invntry['sku_std'] * dm_invntry['days_btw']**0.5
             dm_invntry['exp_sales'] = dm_invntry['sku_avg'] * dm_invntry['days_btw']
+
             Q = dict(dm_invntry[dm_invntry['dc_id']==0]['stock_quantity'].groupby(by=dm_invntry.item_sku_id,sort=False).sum())
             # 考虑不同的FDC对应的应分配量不一样，应该与其销量损失比例有关
             dm_invntry['Q'] = dm_invntry.item_sku_id.apply(lambda x: Q[x] * 0.625)
@@ -250,7 +247,8 @@ class UserPolicy:
             return temp
 
         # 调用函数
-        replenish = replenishment(replen_matrix,rdc_stock)
+        self.replenish = replenishment(replen_matrix,rdc_stock)
+        replenish = self.replenish
         #replenish = replenish()
         #replenish = replenishment_df(r_star,inventory)
         allocation_rdc_r = allocation_rdc(inventory,t)
