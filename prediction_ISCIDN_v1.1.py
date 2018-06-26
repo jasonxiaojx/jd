@@ -22,9 +22,7 @@ import numpy as np
 import pandas as pd
 
 
-# In[337]:
-
-
+# Proprocessing DataTables into DataFrames PD:
 sku_sales = pd.read_csv('sku_sales.csv')
 sku_sales['date'] = pd.to_datetime(sku_sales['date'])
 sku_sales = sku_sales.set_index('item_sku_id')
@@ -32,15 +30,14 @@ sku_std = pd.read_csv('par_RDC_total_sale.csv')
 sku_std = sku_std.set_index('item_sku_id')
 sku_sales['discount'].fillna(0, inplace = True)
 sku_sales['vendibility'].fillna(0, inplace = True)
-sku_sales.head()
+sku_prom = pd.read_csv('sku_prom.csv')
+sku_prom['date'] = pd.to_datetime(sku_prom['date'])
+sku_prom = sku_prom.set_index('item_sku_id')
+
 
 
 # In[441]:
 
-
-sku_prom = pd.read_csv('sku_prom.csv')
-sku_prom['date'] = pd.to_datetime(sku_prom['date'])
-sku_prom = sku_prom.set_index('item_sku_id')
 def slicerp(t0, a7):
     cut = sku_prom[sku_prom['date']>= t0]
     cut2 = cut[cut['date'] <= a7]
@@ -94,14 +91,6 @@ def preprocess(t0, t7, t14, t30, a7, dc_id):
     return [join_prom,a_7]
 
 
-# In[478]:
-
-
-trainer = preprocess('20180201', '20180125', '20180118', '20180101', '20180208', 0)
-testing = preprocess('20170901', '20170825', '20170818', '20170801', '20170908', 0)
-
-
-# In[486]:
 
 
 #Machine Learning Regressors
@@ -157,19 +146,7 @@ def MAPE(result):
         if true[i] > 0:
             percentage_errors.append(abs((true[i]-predicted[i])/true[i]))
     print(sum(percentage_errors)/len(percentage_errors))
-    
 
-
-# In[488]:
-
-
-result = predict(trainer, testing)
-print(MAPE(result))
-print(result.plot())
-print(result)
-
-
-# In[452]:
 
 
 total_predictions = []
@@ -178,30 +155,15 @@ for i in range(6):
     testing = preprocess('20180101', '20171225', '20171218', '20171201', '20180108', i)
     total_predictions.append(predict(trainer, testing)['predicted'])
 lol = pd.concat(total_predictions, axis = 1)
-
-
-# In[453]:
-
-
 lol.columns = [0, 1, 2, 3, 4, 5]
 
-
-# In[454]:
 
 
 def add(a, b, c, d, e, f):
     return a + b + c + d + e + f
 lol['sum'] = lol.apply(lambda x:add(lol[0], lol[1], lol[2], lol[3], lol[4], lol[5]))[0]
+#FILE OUTPUT
 lol.to_csv('aggregate.csv')
-
-
-# In[455]:
-
-
-lol.head()
-
-
-# In[456]:
 
 
 stacked = pd.DataFrame()
@@ -215,11 +177,6 @@ for i in range(2,6):
     temp.index = lol.index
     stacked = stacked.append(temp)
     print(temp)
-    
 
-
-# In[457]:
-
-
+#FILE OUTPUT
 stacked.to_csv('stacked.csv')
-
