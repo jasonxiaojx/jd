@@ -79,10 +79,8 @@ def preprocess(t0, t7, t14, t30, a7, dc_id):
     p_30 = p_30_raw.groupby(p_30_raw.index)['quantity'].sum()
     a_7_raw = slicerx(t0, a7, dc_id)
     discount = a_7_raw.groupby(a_7_raw.index)['discount'].mean()
-    discount = discount
     joined = pd.concat([p_7, p_14, p_30, discount], axis=1)
     promotions = prom(t0, a7)
-    promotions = promotions
     join_prom = pd.concat([joined, promotions], axis = 1)
     join_prom.columns = ['p_7', 'p_14','p_30','discount', '1', '4', '6', '10']
     a_7 = a_7_raw.groupby(a_7_raw.index)['quantity'].sum()
