@@ -94,10 +94,10 @@ class UserPolicy:
                 shell.loc[i, 10] = d
             return shell
 
-        def slicerd(t0, a30, dc_id):
+        def slicerd(t0, a30):
             time_slice = sku_discount_sub[sku_discount_sub['date'] <= a30]
             time_slice2 = time_slice[time_slice['date'] >= t0]
-            dc_slice = time_slice2[time_slice2['dc_id'] == dc_id].sort_values('date')
+            dc_slice = time_slice2.sort_values('date')
             return dc_slice
 
         def slicerx(t30, t0, dc_id):
@@ -132,7 +132,7 @@ class UserPolicy:
             p_14 = p_14_raw.groupby(p_14_raw.index)['quantity'].sum()
             p_30_raw = slicerx(t30, t0, dc_id)
             p_30 = p_30_raw.groupby(p_30_raw.index)['quantity'].sum()
-            d_7_raw = slicerd(t0, a30, dc_id)
+            d_7_raw = slicerd(t0, a30)
             discount = d_7_raw.groupby(d_7_raw.index)['discount'].mean()
             original = d_7_raw.groupby(d_7_raw.index)['original_price'].mean()
             joined = pd.concat([p_7, p_14, p_30, discount, original], axis=1)
@@ -158,11 +158,14 @@ class UserPolicy:
                 rgs = GradientBoostingRegressor()
                 rgs.fit(trainer[0], trainer[1])
                 predicted = rgs.predict(testing)
-                predicted_sku = testing[0].index
+                for i in range(len(predicted)):
+                    if predicted[i] < 0:
+                        predicted[i] = 0
+                predicted_sku = testing.index
                 transformed = pd.Series(data = predicted, index = predicted_sku)
                 #applying bounds
                 transformed = upper_bound(transformed, sku_std, 4)
-                return transformed
+                return transformed/30
             else:
                 rgs = GradientBoostingRegressor()
                 rgs.fit(trainer[0], trainer[1])
@@ -189,11 +192,10 @@ class UserPolicy:
         def replenishment_ary():
             total_predictions = []
             for i in range(6):
-                trainer = preprocess('20180101', '20171226', '20171219', '20181202', '20180130', i)
-                testing = preprocess('20180101', '20171226', '20171219', '20181202', '20180130', i)
-                total_predictions.append(predict(trainer, testing, sub = False)['predicted'])
-            lol = pd.concat(total_predictions, a
-                xis = 1)
+                trainer = preprocess('20180201', '20180126', '20180119', '20180101', '20180228', i)
+                testing = preprocess_sub('20180301', '20180224', '20180218', '20180201', '20180331', i)
+                total_predictions.append(predict(trainer, testing, sub = True))
+            lol = pd.concat(total_predictions, axis = 1)
             lol.columns = [0, 1, 2, 3, 4, 5]
             lol['sum'] = lol.apply(lambda x:add(lol[0], lol[1], lol[2], lol[3], lol[4], lol[5]))[0]
             stacked = pd.DataFrame()
@@ -218,9 +220,9 @@ class UserPolicy:
             return [replenishment_rdc, replenishment_fdc]
 
         # simple rule: no replenishment and transshipment at all
-        inventory_decision = np.zeros((6, 1000)).astype(int)
+        #inventory_decision = np.zeros((6, 1000)).astype(int)
 
-        return inventory_decision
+        return #inventory_decision
 
 
     def info_update(self,end_day_inventory,t):
